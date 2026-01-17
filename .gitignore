@@ -1,0 +1,24 @@
+# Bundler
+Gemfile.lock
+
+# RSpec
+spec/examples.txt
+
+# Model data (downloaded from HuggingFace)
+data/*.onnx
+data/*.bin
+data/*.json
+!data/README.md
+
+# Gem build artifacts
+*.gem
+pkg/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# macOS
+.DS_Store

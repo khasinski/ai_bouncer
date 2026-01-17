@@ -1,0 +1,23 @@
+
+===============================================================================
+
+AiBouncer has been installed!
+
+Next steps:
+
+1. Download model files (if not included):
+   - Download from: https://github.com/khasinski/ai_bouncer/releases
+   - Extract to: vendor/ai_bouncer/
+
+2. Configure protected paths in config/initializers/ai_bouncer.rb
+
+3. Start with action: :log to test detection without blocking
+
+4. Monitor your logs for "[AiBouncer]" entries
+
+5. When confident, switch to action: :block
+
+For more information, visit:
+https://github.com/khasinski/ai_bouncer
+
+===============================================================================

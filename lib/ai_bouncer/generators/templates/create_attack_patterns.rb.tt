@@ -1,0 +1,26 @@
+# frozen_string_literal: true
+
+class CreateAttackPatterns < ActiveRecord::Migration[<%= ActiveRecord::Migration.current_version %>]
+  def change
+    # Enable pgvector extension (requires pgvector installed on PostgreSQL)
+    enable_extension "vector" unless extension_enabled?("vector")
+
+    create_table :attack_patterns do |t|
+      t.string :label, null: false, index: true
+      t.string :severity, default: "medium"
+      t.string :source
+      t.text :sample_text
+      t.vector :embedding, limit: <%= @embedding_dim %>
+
+      t.timestamps
+    end
+
+    # Add HNSW index for fast approximate nearest neighbor search
+    # ef_construction: higher = better recall, slower build
+    # m: higher = better recall, more memory
+    add_index :attack_patterns, :embedding,
+              using: :hnsw,
+              opclass: :vector_cosine_ops,
+              name: "index_attack_patterns_on_embedding_hnsw"
+  end
+end
