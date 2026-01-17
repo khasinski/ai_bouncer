@@ -1,5 +1,8 @@
 # AiBouncer
 
+[![CI](https://github.com/khasinski/ai_bouncer/actions/workflows/ci.yml/badge.svg)](https://github.com/khasinski/ai_bouncer/actions/workflows/ci.yml)
+[![Gem Version](https://badge.fury.io/rb/ai_bouncer.svg)](https://badge.fury.io/rb/ai_bouncer)
+
 AI-powered HTTP request classification for Ruby on Rails. Detect credential stuffing, SQL injection, XSS, and other attacks using ML embeddings.
 
 ## Features

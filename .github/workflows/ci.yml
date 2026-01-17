@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        ruby-version: ['3.1', '3.2', '3.3']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Ruby ${{ matrix.ruby-version }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby-version }}
+          bundler-cache: true
+
+      - name: Download model files
+        run: |
+          mkdir -p data
+          curl -sL "https://huggingface.co/khasinski/ai-bouncer/resolve/main/embedding_model.onnx" -o data/embedding_model.onnx
+          curl -sL "https://huggingface.co/khasinski/ai-bouncer/resolve/main/vocab.json" -o data/vocab.json
+          curl -sL "https://huggingface.co/khasinski/ai-bouncer/resolve/main/tokenizer_config.json" -o data/tokenizer_config.json
+          curl -sL "https://huggingface.co/khasinski/ai-bouncer/resolve/main/config.json" -o data/config.json
+          curl -sL "https://huggingface.co/khasinski/ai-bouncer/resolve/main/vectors.bin" -o data/vectors.bin
+          curl -sL "https://huggingface.co/khasinski/ai-bouncer/resolve/main/labels.json" -o data/labels.json
+
+      - name: Run tests
+        run: bundle exec rspec
+
+      - name: Build gem
+        run: gem build ai_bouncer.gemspec
