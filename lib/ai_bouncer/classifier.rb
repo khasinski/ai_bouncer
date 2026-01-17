@@ -73,11 +73,22 @@ module AiBouncer
         parts << "BODY_SIZE:#{size_bucket}"
       end
 
-      # Header count
-      parts << "HEADERS:#{headers.size}" if headers.any?
+      # Header analysis
+      if headers.any?
+        parts << "HEADERS:#{headers.size}"
+        # Include header values for pattern detection
+        headers.each do |name, value|
+          next if value.nil? || value.empty?
+          # Flag suspicious header names
+          if name.downcase == "referer" || name.downcase == "referrer"
+            parts << "HAS_REFERER"
+          end
+        end
+      end
 
-      # Suspicious pattern detection
-      combined = "#{path} #{body} #{params.values.join(' ')}"
+      # Suspicious pattern detection - include headers in combined text
+      header_values = headers.values.compact.join(' ')
+      combined = "#{path} #{body} #{params.values.join(' ')} #{header_values}"
 
       if combined =~ /\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|OR\s+\d|--|')/i
         parts << "FLAG:SQL_KEYWORDS"
@@ -95,9 +106,17 @@ module AiBouncer
         parts << "FLAG:CMD_INJECTION"
       end
 
-      # Include payload snippet
-      payload = body.to_s.empty? ? params.to_s : body.to_s
-      parts << "PAYLOAD:#{payload[0, 200]}" unless payload.empty?
+      # Include payload snippet (body, params, and suspicious headers)
+      payload_parts = []
+      payload_parts << body.to_s unless body.to_s.empty?
+      payload_parts << params.to_s unless params.empty?
+      # Include Referer if present (common attack vector)
+      if headers["Referer"] || headers["referer"]
+        referer = headers["Referer"] || headers["referer"]
+        payload_parts << "REFERER:#{referer}" unless referer.empty?
+      end
+      payload = payload_parts.join(" ")
+      parts << "PAYLOAD:#{payload[0, 300]}" unless payload.empty?
 
       parts.join(" ")
     end

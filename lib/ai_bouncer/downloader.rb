@@ -76,6 +76,8 @@ module AiBouncer
 
         uri = URI.parse(url)
 
+        raise DownloadError, "Invalid URL: #{url}" unless uri.host
+
         Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https") do |http|
           http.read_timeout = 300  # 5 minutes for large files
           http.open_timeout = 30
@@ -93,6 +95,11 @@ module AiBouncer
               end
             when Net::HTTPRedirection
               new_url = response["location"]
+              # Handle relative redirects
+              new_uri = URI.parse(new_url)
+              if new_uri.relative?
+                new_url = URI.join("#{uri.scheme}://#{uri.host}:#{uri.port}", new_url).to_s
+              end
               download_file(new_url, dest_path, max_redirects: max_redirects - 1)
             else
               raise DownloadError, "HTTP #{response.code}: #{response.message} for #{url}"

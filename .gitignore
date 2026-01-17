@@ -22,3 +22,4 @@ pkg/
 
 # macOS
 .DS_Store
+test_app/
