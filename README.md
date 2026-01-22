@@ -8,7 +8,7 @@ AI-powered HTTP request classification for Ruby on Rails. Detect credential stuf
 ## Features
 
 - **Fast**: ~2ms inference time (memory mode)
-- **Lightweight**: ~31MB total model size
+- **Lightweight**: ~32MB total model size
 - **Accurate**: 92%+ detection rate on common attacks
 - **Flexible Storage**: In-memory or PostgreSQL + pgvector
 - **Easy to integrate**: Drop-in middleware or controller concern
@@ -23,6 +23,13 @@ AI-powered HTTP request classification for Ruby on Rails. Detect credential stuf
 - Credential Stuffing
 - Spam Bots
 - Vulnerability Scanners
+- Server-Side Request Forgery (SSRF)
+- XML External Entity (XXE)
+- NoSQL Injection
+- Server-Side Template Injection (SSTI)
+- Log4Shell (JNDI Injection)
+- Open Redirect
+- LDAP Injection
 
 ## Requirements
 
@@ -47,7 +54,7 @@ bundle install
 rails generate ai_bouncer:install
 ```
 
-This creates `config/initializers/ai_bouncer.rb`. Model files (~31MB) are **auto-downloaded** on first request.
+This creates `config/initializers/ai_bouncer.rb`. Model files (~32MB) are **auto-downloaded** on first request.
 
 ### Manual Download (Optional)
 
@@ -73,7 +80,7 @@ config.storage = :memory
 ```
 
 **Pros**: ~2ms latency, no database required
-**Cons**: ~31MB RAM usage, patterns fixed at deploy time
+**Cons**: ~32MB RAM usage, patterns fixed at deploy time
 
 ### Database Mode
 
@@ -402,8 +409,8 @@ Auto-downloaded to `vendor/ai_bouncer/` on first request:
 |------|------|-------------|
 | `embedding_model.onnx` | 29 MB | Model2Vec ONNX model |
 | `vocab.json` | 550 KB | Tokenizer vocabulary |
-| `vectors.bin` | 1.1 MB | Attack pattern vectors (memory mode) |
-| `labels.json` | 28 KB | Labels and metadata |
+| `vectors.bin` | 2.5 MB | Attack pattern vectors (memory mode) |
+| `labels.json` | 53 KB | Labels and metadata |
 
 ## How It Works
 
@@ -415,7 +422,7 @@ Auto-downloaded to `vendor/ai_bouncer/` on first request:
 
 ## Contributing Training Data
 
-**Help make AiBouncer better!** The model currently uses a small dataset (~1,000 patterns) derived from:
+**Help make AiBouncer better!** The model currently uses a balanced dataset (~2,600 patterns) derived from:
 - Public security payloads (SecLists, fuzzdb)
 - CSIC 2010 HTTP dataset
 - A sample of real nginx logs

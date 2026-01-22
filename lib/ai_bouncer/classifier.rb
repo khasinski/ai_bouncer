@@ -1,11 +1,15 @@
 # frozen_string_literal: true
 
 require "json"
+require "cgi"
 
 module AiBouncer
   # HTTP request classifier using KNN on pre-computed attack vectors
   class Classifier
-    ATTACK_LABELS = %w[sqli xss path_traversal command_injection credential_stuffing spam_bot].freeze
+    ATTACK_LABELS = %w[
+      sqli xss path_traversal command_injection credential_stuffing spam_bot
+      scanner ssrf xxe nosql_injection ssti log4shell open_redirect ldap_injection
+    ].freeze
 
     attr_reader :model
 
@@ -52,7 +56,9 @@ module AiBouncer
       # User agent classification
       if user_agent && !user_agent.empty?
         ua_lower = user_agent.downcase
-        ua_type = if %w[bot crawler curl python java wget].any? { |b| ua_lower.include?(b) }
+        ua_type = if %w[sqlmap nikto zgrab nmap wpscan dirbuster gobuster nuclei acunetix burp].any? { |s| ua_lower.include?(s) }
+                    "scanner"
+                  elsif %w[bot crawler curl python java wget go-http libwww perl mechanize axios node-fetch ruby].any? { |b| ua_lower.include?(b) }
                     "bot"
                   elsif %w[mozilla chrome safari firefox edge opera].any? { |b| ua_lower.include?(b) }
                     "browser"
@@ -76,49 +82,175 @@ module AiBouncer
       # Header analysis
       if headers.any?
         parts << "HEADERS:#{headers.size}"
-        # Include header values for pattern detection
         headers.each do |name, value|
           next if value.nil? || value.empty?
-          # Flag suspicious header names
-          if name.downcase == "referer" || name.downcase == "referrer"
-            parts << "HAS_REFERER"
-          end
+          name_lower = name.to_s.downcase
+          parts << "HAS_REFERER" if name_lower == "referer" || name_lower == "referrer"
+          parts << "HAS_XML_CONTENT" if name_lower == "content-type" && value.to_s.include?("xml")
+          parts << "HAS_JSON_CONTENT" if name_lower == "content-type" && value.to_s.include?("json")
         end
       end
 
-      # Suspicious pattern detection - include headers in combined text
-      header_values = headers.values.compact.join(' ')
+      # Combine all text for pattern analysis
+      header_values = headers.values.compact.join(" ")
       combined = "#{path} #{body} #{params.values.join(' ')} #{header_values}"
 
-      if combined =~ /\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|OR\s+\d|--|')/i
+      # URL-decode combined text for better pattern detection
+      decoded_combined = begin
+        CGI.unescape(combined)
+      rescue StandardError
+        combined
+      end
+
+      # ============ Advanced Feature Extraction ============
+
+      # Entropy calculation (high entropy often indicates encoded attacks)
+      entropy = calculate_entropy(combined)
+      parts << "ENTROPY:#{entropy_bucket(entropy)}"
+
+      # URL encoding detection
+      encoding_depth = detect_encoding_depth(combined)
+      parts << "ENCODING:#{encoding_depth}" if encoding_depth > 0
+
+      # Special character density (use decoded for accuracy)
+      special_density = special_char_density(decoded_combined)
+      parts << "SPECIAL_DENSITY:#{density_bucket(special_density)}"
+
+      # ============ Attack Pattern Flags (use decoded_combined for detection) ============
+
+      # SQL Injection patterns
+      if decoded_combined =~ /\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|OR\s+\d|AND\s+\d|--|'|;|\bWHERE\b|\bFROM\b|\bSLEEP\s*\(|WAITFOR|BENCHMARK|PG_SLEEP|EXTRACTVALUE|UPDATEXML)/i
         parts << "FLAG:SQL_KEYWORDS"
       end
 
-      if combined =~ /(<script|javascript:|onerror|onload|alert\()/i
+      # XSS patterns
+      if decoded_combined =~ /(<script|javascript:|onerror|onload|onmouseover|onfocus|onclick|alert\s*\(|prompt\s*\(|confirm\s*\(|<svg|<img[^>]+on\w+=|<iframe|<body[^>]+on\w+=|expression\s*\(|eval\s*\()/i
         parts << "FLAG:XSS_PATTERN"
       end
 
-      if combined =~ /(\.\.|%2e%2e)/i
+      # Path traversal
+      if decoded_combined =~ /(\.\.[\/\\])/i
         parts << "FLAG:PATH_TRAVERSAL"
       end
 
-      if combined =~ /(\||;|`|\$\(|&&|\|\|)/
+      # Command injection
+      if decoded_combined =~ /(\||;|`|\$\(|&&|\|\||>\s*\/|<\s*\/|\bcat\b|\bls\b|\bwhoami\b|\bid\b|\bping\b|\bnc\b|\bcurl\b|\bwget\b)/i
         parts << "FLAG:CMD_INJECTION"
       end
 
-      # Include payload snippet (body, params, and suspicious headers)
+      # SSRF patterns
+      if decoded_combined =~ /(169\.254\.169\.254|metadata\.google|127\.0\.0\.1|localhost|0\.0\.0\.0|\[::1\]|file:\/\/|gopher:\/\/|dict:\/\/|internal|\.internal)/i
+        parts << "FLAG:SSRF_PATTERN"
+      end
+
+      # XXE patterns
+      if decoded_combined =~ /(<!DOCTYPE|<!ENTITY|SYSTEM\s*["']|PUBLIC\s*["']|%xxe|&xxe)/i
+        parts << "FLAG:XXE_PATTERN"
+      end
+
+      # NoSQL injection patterns (must have $ operator, not just JSON)
+      if decoded_combined =~ /(\$gt|\$ne|\$lt|\$or|\$and|\$where|\$regex|\$exists|\$in|\$nin)["\s:}\]]/i
+        parts << "FLAG:NOSQL_PATTERN"
+      end
+
+      # SSTI patterns
+      if decoded_combined =~ /(\{\{.*\}\}|\$\{.*\}|<%.*%>|\#\{.*\}|__class__|__mro__|__subclasses__|__globals__|__builtins__|config\.|request\.|self\.)/i
+        parts << "FLAG:SSTI_PATTERN"
+      end
+
+      # Log4Shell patterns
+      if decoded_combined =~ /(\$\{jndi:|j\$\{|jn\$\{|\$\{lower:j\}|\$\{upper:j\}|ldap:\/\/|rmi:\/\/)/i
+        parts << "FLAG:LOG4SHELL_PATTERN"
+      end
+
+      # Open redirect patterns
+      if decoded_combined =~ /(redirect|return|next|url|goto|dest|continue|rurl)=.*?(https?:\/\/|\/\/)[^\/]/i
+        parts << "FLAG:REDIRECT_PATTERN"
+      end
+
+      # LDAP injection patterns
+      if decoded_combined =~ /(\*\)\(|\)\(|objectClass|\)\(&\)|\)\(\|)/i
+        parts << "FLAG:LDAP_PATTERN"
+      end
+
+      # Scanner fingerprints in paths
+      if path =~ /(\.env|\.git|wp-config|phpinfo|\.aws|backup\.sql|\.htpasswd|web\.config|actuator|swagger|api-docs)/i
+        parts << "FLAG:SCANNER_PATH"
+      end
+
+      # ============ Payload ============
       payload_parts = []
       payload_parts << body.to_s unless body.to_s.empty?
       payload_parts << params.to_s unless params.empty?
       # Include Referer if present (common attack vector)
-      if headers["Referer"] || headers["referer"]
-        referer = headers["Referer"] || headers["referer"]
-        payload_parts << "REFERER:#{referer}" unless referer.empty?
-      end
+      referer = headers["Referer"] || headers["referer"]
+      payload_parts << "REFERER:#{referer}" if referer && !referer.empty?
       payload = payload_parts.join(" ")
-      parts << "PAYLOAD:#{payload[0, 300]}" unless payload.empty?
+      parts << "PAYLOAD:#{payload[0, 500]}" unless payload.empty?
 
       parts.join(" ")
+    end
+
+    # Calculate Shannon entropy of a string
+    def self.calculate_entropy(str)
+      return 0.0 if str.nil? || str.empty?
+
+      freq = Hash.new(0)
+      str.each_char { |c| freq[c] += 1 }
+
+      len = str.length.to_f
+      entropy = 0.0
+      freq.each_value do |count|
+        prob = count / len
+        entropy -= prob * Math.log2(prob) if prob > 0
+      end
+      entropy
+    end
+
+    def self.entropy_bucket(entropy)
+      case entropy
+      when 0..2.5 then "low"
+      when 2.5..4.0 then "normal"
+      when 4.0..5.5 then "high"
+      else "very_high"
+      end
+    end
+
+    # Detect URL encoding depth (double/triple encoding)
+    def self.detect_encoding_depth(str)
+      return 0 if str.nil? || str.empty?
+
+      depth = 0
+      current = str
+      3.times do
+        decoded = begin
+          CGI.unescape(current)
+        rescue StandardError
+          current
+        end
+        break if decoded == current
+
+        depth += 1
+        current = decoded
+      end
+      depth
+    end
+
+    # Calculate special character density
+    def self.special_char_density(str)
+      return 0.0 if str.nil? || str.empty?
+
+      special_chars = str.count("'\"<>(){}[];|&$`\\!@#%^*=+~")
+      special_chars.to_f / str.length
+    end
+
+    def self.density_bucket(density)
+      case density
+      when 0..0.05 then "low"
+      when 0.05..0.15 then "normal"
+      when 0.15..0.3 then "high"
+      else "very_high"
+      end
     end
 
     private
